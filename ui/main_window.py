@@ -141,6 +141,23 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
         
+        edit_menu = self.menuBar().addMenu("&Edit")
+        
+        rename_action = QAction("&Rename", self)
+        rename_action.setShortcut(QKeySequence("F2"))
+        rename_action.triggered.connect(self.rename_selected_video)
+        edit_menu.addAction(rename_action)
+        
+        move_action = QAction("&Move to...", self)
+        move_action.setShortcut(QKeySequence("Ctrl+M"))
+        move_action.triggered.connect(self.move_selected_videos)
+        edit_menu.addAction(move_action)
+        
+        delete_action = QAction("&Delete", self)
+        delete_action.setShortcut(QKeySequence.Delete)
+        delete_action.triggered.connect(self.delete_selected_videos)
+        edit_menu.addAction(delete_action)
+        
         view_menu = self.menuBar().addMenu("&View")
         
         toggle_theme_action = QAction("Toggle &Theme", self)
@@ -189,6 +206,10 @@ class MainWindow(QMainWindow):
         
         toolbar.addSeparator()
         
+        move_action = QAction(self.style().standardIcon(QStyle.SP_DirLinkIcon), "Move Files", self)
+        move_action.triggered.connect(self.move_selected_videos)
+        toolbar.addAction(move_action)
+        
         toggle_theme_action = QAction(self.style().standardIcon(QStyle.SP_DesktopIcon), "Toggle Theme", self)
         toggle_theme_action.triggered.connect(self.toggle_theme)
         toolbar.addAction(toggle_theme_action)
@@ -211,6 +232,10 @@ class MainWindow(QMainWindow):
         # F2 to rename selected video
         self.shortcut_rename = QShortcut(QKeySequence(Qt.Key_F2), self)
         self.shortcut_rename.activated.connect(self.rename_selected_video)
+        
+        # Ctrl+M to move selected videos
+        self.shortcut_move = QShortcut(QKeySequence("Ctrl+M"), self)
+        self.shortcut_move.activated.connect(self.move_selected_videos)
     
     def connect_signals(self):
         """Connect signals to slots"""
@@ -569,6 +594,9 @@ class MainWindow(QMainWindow):
         rename_action = context_menu.addAction("Rename")
         rename_action.triggered.connect(lambda: self.rename_video(file_path))
         
+        move_action = context_menu.addAction("Move to...")
+        move_action.triggered.connect(lambda: self.move_video(file_path))
+        
         delete_action = context_menu.addAction("Delete")
         delete_action.triggered.connect(lambda: self.delete_video(file_path))
         
@@ -817,13 +845,79 @@ class MainWindow(QMainWindow):
         
     def apply_search_filter(self, params):
         """Apply search and filter settings"""
-        # For now, just reloading the full folder and displaying a message
-        # In a real implementation, we'd filter the existing items in the grid
-        # or query the database with the specified filters
+        # Get all videos from the current folder
         current_path = self.folder_browser.get_current_path()
-        self.status_bar.showMessage(f"Filtering: {params}", 3000)
-        # self.load_videos_in_folder(current_path)
+        if not current_path:
+            return
+            
+        self.status_bar.showMessage(f"Filtering videos...", 1000)
         
+        # Get all videos in the current grid
+        all_videos = []
+        for i in range(self.video_grid.model.rowCount()):
+            item = self.video_grid.model.item(i)
+            if item:
+                all_videos.append(item)
+        
+        # If no videos to filter, just return
+        if not all_videos:
+            return
+            
+        # Apply filters
+        filtered_videos = []
+        search_text = params.get("search_text", "").lower()
+        
+        for item in all_videos:
+            # Skip if video doesn't exist
+            if not os.path.exists(item.file_path):
+                continue
+                
+            # Apply filename search
+            if search_text and search_text not in item.file_name.lower():
+                continue
+                
+            # Apply watched filter
+            watched_filter = params.get("watched_filter", "All Videos")
+            if watched_filter == "Watched Only" and not item.watched:
+                continue
+            elif watched_filter == "Unwatched Only" and item.watched:
+                continue
+                
+            # Apply tag filter
+            tag_filter = params.get("tag", None)
+            if tag_filter and tag_filter != "All Tags":
+                if not item.tags or tag_filter not in item.tags:
+                    continue
+                    
+            # Item passed all filters, add it
+            filtered_videos.append(item)
+            
+        # Sort videos
+        sort_by = params.get("sort_by", "name")
+        sort_order = params.get("sort_order", "ascending")
+        
+        if sort_by == "name":
+            filtered_videos.sort(key=lambda x: x.file_name.lower(), 
+                             reverse=(sort_order == "descending"))
+        elif sort_by == "size":
+            filtered_videos.sort(key=lambda x: x.size, 
+                             reverse=(sort_order == "descending"))
+        elif sort_by == "duration":
+            filtered_videos.sort(key=lambda x: x.duration, 
+                             reverse=(sort_order == "descending"))
+        elif sort_by == "date_modified":
+            filtered_videos.sort(key=lambda x: os.path.getmtime(x.file_path) if os.path.exists(x.file_path) else 0, 
+                             reverse=(sort_order == "descending"))
+        
+        # Update the grid with filtered videos
+        self.video_grid.model.clear()
+        for item in filtered_videos:
+            self.video_grid.model.appendRow(item.clone())
+            
+        # Show message with filter results
+        self.status_bar.showMessage(
+            f"Found {len(filtered_videos)} videos matching your filters", 3000)
+    
     def closeEvent(self, event):
         """Действия при закрытии приложения"""
         # Отменяем текущую загрузку, если она выполняется
@@ -992,4 +1086,133 @@ class MainWindow(QMainWindow):
             dialog = ReviewsListDialog(self)
             dialog.exec_()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to show reviews: {str(e)}") 
+            QMessageBox.critical(self, "Error", f"Failed to show reviews: {str(e)}")
+    
+    def move_video(self, file_path):
+        """Move a video file to another folder"""
+        self.move_files([file_path])
+    
+    def move_selected_videos(self):
+        """Move selected video files to another folder"""
+        selected = self.video_grid.get_selected_videos()
+        if selected:
+            self.move_files(selected)
+    
+    def move_files(self, file_paths):
+        """Move a list of files to another folder"""
+        if not file_paths:
+            return
+            
+        # Ask user to select a destination folder
+        dest_folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Destination Folder",
+            os.path.dirname(file_paths[0]),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        
+        if not dest_folder:
+            return  # User cancelled
+            
+        # Check if destination folder exists and is different from source
+        if not os.path.isdir(dest_folder):
+            QMessageBox.critical(self, "Error", "Invalid destination folder")
+            return
+            
+        # Check if any of the file paths are already in the destination folder
+        already_in_dest = []
+        for path in file_paths:
+            if os.path.dirname(path) == dest_folder:
+                already_in_dest.append(os.path.basename(path))
+                
+        if already_in_dest:
+            if len(already_in_dest) == len(file_paths):
+                QMessageBox.information(
+                    self, 
+                    "Information", 
+                    "Files are already in the destination folder"
+                )
+                return
+            else:
+                # Show warning for some files
+                message = f"{len(already_in_dest)} out of {len(file_paths)} files are already in the destination folder.\n"
+                message += "Do you want to continue moving the remaining files?"
+                
+                reply = QMessageBox.question(
+                    self, 
+                    "Files Already in Destination",
+                    message,
+                    QMessageBox.Yes | QMessageBox.No, 
+                    QMessageBox.Yes
+                )
+                
+                if reply != QMessageBox.Yes:
+                    return
+                
+                # Filter out files that are already in the destination
+                file_paths = [path for path in file_paths if os.path.dirname(path) != dest_folder]
+                
+        # Move files one by one
+        success_count = 0
+        error_count = 0
+        errors = []
+        
+        for file_path in file_paths:
+            try:
+                file_name = os.path.basename(file_path)
+                dest_path = os.path.join(dest_folder, file_name)
+                
+                # Check if a file with the same name already exists in the destination
+                if os.path.exists(dest_path):
+                    reply = QMessageBox.question(
+                        self, 
+                        "File Exists",
+                        f"A file named '{file_name}' already exists in the destination folder.\n"
+                        "Do you want to replace it?",
+                        QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                        QMessageBox.No
+                    )
+                    
+                    if reply == QMessageBox.Cancel:
+                        # Cancel the entire move operation
+                        break
+                    elif reply == QMessageBox.No:
+                        # Skip this file
+                        continue
+                
+                # Move the file
+                shutil.move(file_path, dest_path)
+                
+                # Update database record with new path
+                video_data = self.db.get_video_by_path(file_path)
+                if video_data:
+                    self.db.update_video_path(video_data["id"], dest_path, dest_folder)
+                
+                success_count += 1
+                
+            except Exception as e:
+                error_count += 1
+                errors.append(f"{os.path.basename(file_path)}: {str(e)}")
+                
+        # Display results
+        if success_count > 0:
+            message = f"Successfully moved {success_count} file(s)"
+            if error_count > 0:
+                message += f", {error_count} file(s) could not be moved"
+            
+            QMessageBox.information(
+                self,
+                "Move Complete",
+                message
+            )
+            
+        if error_count > 0:
+            error_message = "The following errors occurred:\n\n" + "\n".join(errors)
+            QMessageBox.warning(
+                self,
+                "Move Errors",
+                error_message
+            )
+            
+        # Refresh current folder view
+        self.refresh_current_folder() 

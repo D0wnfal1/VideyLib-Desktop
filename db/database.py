@@ -293,7 +293,7 @@ class Database:
         cursor = conn.cursor()
         
         cursor.execute('''
-            SELECT r.id, r.video_id, v.file_name, r.rating, r.review_text, r.date_added
+            SELECT r.*, v.file_name, v.file_path
             FROM reviews r
             JOIN videos v ON r.video_id = v.id
             ORDER BY r.date_added DESC
@@ -304,3 +304,19 @@ class Database:
         conn.close()
         
         return reviews
+
+    def update_video_path(self, video_id, new_path, new_folder):
+        """Update the file path and folder path for a video after it has been moved"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE videos 
+            SET file_path = ?, folder_path = ?
+            WHERE id = ?
+        ''', (new_path, new_folder, video_id))
+        
+        conn.commit()
+        conn.close()
+        
+        return cursor.rowcount > 0
