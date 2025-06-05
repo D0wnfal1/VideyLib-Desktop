@@ -250,6 +250,8 @@ class MainWindow(QMainWindow):
         # Connect video player signals
         self.video_player.videoFinished.connect(self.on_video_finished)
         self.video_player.errorOccurred.connect(self.handle_player_error)
+        self.video_player.nextVideoRequested.connect(self.play_next_video)
+        self.video_player.previousVideoRequested.connect(self.play_previous_video)
         
         # Connect search filter signals
         self.search_filter.searchRequested.connect(self.apply_search_filter)
@@ -525,6 +527,10 @@ class MainWindow(QMainWindow):
         # Hide video player when playback finishes
         self.video_player.hide()
         self.status_bar.showMessage("Playback finished", 3000)
+        
+        # Option to automatically play the next video when current one finishes
+        # Uncomment the line below if you want this feature
+        # self.play_next_video()
     
     def on_video_selected(self, file_path):
         """Handle video selection (not double-click)"""
@@ -1215,4 +1221,106 @@ class MainWindow(QMainWindow):
             )
             
         # Refresh current folder view
-        self.refresh_current_folder() 
+        self.refresh_current_folder()
+    
+    def play_next_video(self):
+        """Play the next video in the grid"""
+        # Get all videos in the current grid
+        all_videos = []
+        for i in range(self.video_grid.model.rowCount()):
+            item = self.video_grid.model.item(i)
+            if item:
+                all_videos.append(item.file_path)
+        
+        if not all_videos:
+            return
+        
+        # Get currently playing video path
+        current_path = None
+        if self.video_player.isVisible():
+            # Try to find the path of the currently playing video
+            for i in range(self.video_grid.model.rowCount()):
+                item = self.video_grid.model.item(i)
+                if item and hasattr(item, 'file_path'):
+                    # Check if the item is selected
+                    if self.video_grid.selectionModel().isSelected(self.video_grid.model.index(i, 0)):
+                        current_path = item.file_path
+                        break
+        
+        # If we couldn't determine the current video, just play the first one
+        if not current_path and all_videos:
+            self.play_video(all_videos[0])
+            return
+        
+        # Find the next video in the list
+        try:
+            current_index = all_videos.index(current_path)
+            next_index = (current_index + 1) % len(all_videos)  # Wrap around to the beginning
+            self.play_video(all_videos[next_index])
+            
+            # Select the video in the grid
+            for i in range(self.video_grid.model.rowCount()):
+                item = self.video_grid.model.item(i)
+                if item and item.file_path == all_videos[next_index]:
+                    self.video_grid.selectionModel().select(
+                        self.video_grid.model.index(i, 0),
+                        self.video_grid.selectionModel().ClearAndSelect
+                    )
+                    self.video_grid.scrollTo(self.video_grid.model.index(i, 0))
+                    break
+                    
+        except (ValueError, IndexError):
+            # If an error occurs, just play the first video
+            if all_videos:
+                self.play_video(all_videos[0])
+    
+    def play_previous_video(self):
+        """Play the previous video in the grid"""
+        # Get all videos in the current grid
+        all_videos = []
+        for i in range(self.video_grid.model.rowCount()):
+            item = self.video_grid.model.item(i)
+            if item:
+                all_videos.append(item.file_path)
+        
+        if not all_videos:
+            return
+        
+        # Get currently playing video path
+        current_path = None
+        if self.video_player.isVisible():
+            # Try to find the path of the currently playing video
+            for i in range(self.video_grid.model.rowCount()):
+                item = self.video_grid.model.item(i)
+                if item and hasattr(item, 'file_path'):
+                    # Check if the item is selected
+                    if self.video_grid.selectionModel().isSelected(self.video_grid.model.index(i, 0)):
+                        current_path = item.file_path
+                        break
+        
+        # If we couldn't determine the current video, just play the last one
+        if not current_path and all_videos:
+            self.play_video(all_videos[-1])
+            return
+        
+        # Find the previous video in the list
+        try:
+            current_index = all_videos.index(current_path)
+            prev_index = (current_index - 1) % len(all_videos)  # Wrap around to the end
+            self.play_video(all_videos[prev_index])
+            
+            # Select the video in the grid
+            for i in range(self.video_grid.model.rowCount()):
+                item = self.video_grid.model.item(i)
+                if item and item.file_path == all_videos[prev_index]:
+                    self.video_grid.selectionModel().select(
+                        self.video_grid.model.index(i, 0),
+                        self.video_grid.selectionModel().ClearAndSelect
+                    )
+                    self.video_grid.scrollTo(self.video_grid.model.index(i, 0))
+                    break
+                    
+        except (ValueError, IndexError):
+            # If an error occurs, just play the last video
+            if all_videos:
+                self.play_video(all_videos[-1]) 

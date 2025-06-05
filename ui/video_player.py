@@ -33,6 +33,8 @@ class VideoPlayer(QWidget):
     videoFinished = pyqtSignal()
     positionChanged = pyqtSignal(int)  # Position in milliseconds
     errorOccurred = pyqtSignal(str)    # Сигнал об ошибке
+    nextVideoRequested = pyqtSignal()  # Signal to request next video
+    previousVideoRequested = pyqtSignal()  # Signal to request previous video
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -74,6 +76,8 @@ class VideoPlayer(QWidget):
         self.positionSlider.sliderClicked.connect(self.setPosition)  # Add click handler
         self.volumeSlider.valueChanged.connect(self.setVolume)
         self.fullScreenButton.clicked.connect(self.toggleFullScreen)
+        self.nextButton.clicked.connect(self.requestNextVideo)
+        self.previousButton.clicked.connect(self.requestPreviousVideo)
         
         # Double click on video frame to toggle fullscreen
         self.video_frame.mouseDoubleClickEvent = self.on_video_double_click
@@ -121,6 +125,11 @@ class VideoPlayer(QWidget):
         layout.addWidget(self.video_frame)
         
         # Создаем кнопки управления с иконками и подсказками
+        self.previousButton = QPushButton()
+        self.previousButton.setIcon(self.style().standardIcon(QStyle.SP_MediaSkipBackward))
+        self.previousButton.setToolTip("Previous Video (PageUp)")
+        self.previousButton.setFixedSize(40, 40)
+        
         self.playButton = QPushButton()
         self.playButton.setIcon(self.style().standardIcon(QStyle.SP_MediaPlay))
         self.playButton.setToolTip("Play/Pause (Space)")
@@ -130,6 +139,11 @@ class VideoPlayer(QWidget):
         self.stopButton.setIcon(self.style().standardIcon(QStyle.SP_MediaStop))
         self.stopButton.setToolTip("Stop (S)")
         self.stopButton.setFixedSize(40, 40)
+        
+        self.nextButton = QPushButton()
+        self.nextButton.setIcon(self.style().standardIcon(QStyle.SP_MediaSkipForward))
+        self.nextButton.setToolTip("Next Video (PageDown)")
+        self.nextButton.setFixedSize(40, 40)
         
         self.fullScreenButton = QPushButton()
         self.fullScreenButton.setIcon(self.style().standardIcon(QStyle.SP_TitleBarMaxButton))
@@ -163,8 +177,10 @@ class VideoPlayer(QWidget):
         self.totalTimeLabel = QLabel("00:00")
         
         # Добавляем виджеты в макет элементов управления
+        controlsLayout.addWidget(self.previousButton)
         controlsLayout.addWidget(self.playButton)
         controlsLayout.addWidget(self.stopButton)
+        controlsLayout.addWidget(self.nextButton)
         controlsLayout.addWidget(self.currentTimeLabel)
         controlsLayout.addWidget(self.positionSlider)
         controlsLayout.addWidget(self.totalTimeLabel)
@@ -219,6 +235,14 @@ class VideoPlayer(QWidget):
         # Mute - M
         self.shortcutMute = QShortcut(QKeySequence("M"), self)
         self.shortcutMute.activated.connect(self.toggleMute)
+        
+        # Next video - Page Down
+        self.shortcutNextVideo = QShortcut(QKeySequence(Qt.Key_PageDown), self)
+        self.shortcutNextVideo.activated.connect(self.requestNextVideo)
+        
+        # Previous video - Page Up
+        self.shortcutPrevVideo = QShortcut(QKeySequence(Qt.Key_PageUp), self)
+        self.shortcutPrevVideo.activated.connect(self.requestPreviousVideo)
     
     def open_file(self, file_path):
         """Открыть и воспроизвести видеофайл"""
@@ -592,4 +616,12 @@ class VideoPlayer(QWidget):
             self._prevent_screen_saver(False)
             
         # Вызываем родительский метод
-        super().closeEvent(event) 
+        super().closeEvent(event)
+    
+    def requestNextVideo(self):
+        """Emit signal to request the next video"""
+        self.nextVideoRequested.emit()
+    
+    def requestPreviousVideo(self):
+        """Emit signal to request the previous video"""
+        self.previousVideoRequested.emit() 
