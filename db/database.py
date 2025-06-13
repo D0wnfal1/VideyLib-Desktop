@@ -228,16 +228,51 @@ class Database:
         return videos
     
     def get_all_tags(self):
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT id, name FROM tags ORDER BY name")
-        
-        tags = [{"id": row[0], "name": row[1]} for row in cursor.fetchall()]
-        
-        conn.close()
-        
-        return tags
+        """Get all tags in the database"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, name FROM tags ORDER BY name")
+            
+            tags = [{"id": row[0], "name": row[1]} for row in cursor.fetchall()]
+            
+            conn.close()
+            return tags
+        except Exception as e:
+            print(f"Error getting all tags: {e}")
+            return []
+    
+    def get_tag_id(self, tag_name):
+        """Get tag ID by name"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM tags WHERE name = ?", (tag_name,))
+            
+            result = cursor.fetchone()
+            conn.close()
+            
+            return result[0] if result else None
+        except Exception as e:
+            print(f"Error getting tag ID: {e}")
+            return None
+    
+    def remove_tag(self, tag_id):
+        """Remove a tag from the database"""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
+            # Delete tag (the associated video_tags will be deleted automatically due to CASCADE)
+            cursor.execute("DELETE FROM tags WHERE id = ?", (tag_id,))
+            
+            conn.commit()
+            conn.close()
+            
+            return True
+        except Exception as e:
+            print(f"Error removing tag: {e}")
+            return False
     
     def add_review(self, video_id, rating, review_text, date_added):
         conn = sqlite3.connect(self.db_path)

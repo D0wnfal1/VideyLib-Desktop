@@ -1,11 +1,13 @@
 import os
-from PyQt5.QtCore import Qt, QSize, pyqtSignal, QTimer, QPoint
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QTimer, QPoint, QUrl
 from PyQt5.QtWidgets import (
     QListView, QAbstractItemView, QMenu, QAction, QToolTip, 
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QDialog, QFileDialog,
     QInputDialog, QMessageBox, QSizePolicy, QFormLayout, QTextEdit
 )
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QPixmap, QIcon, QCursor, QPainter
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
+from PyQt5.QtMultimediaWidgets import QVideoWidget
 
 from utils.video_utils import extract_thumbnail, format_file_size, format_duration
 
@@ -100,6 +102,7 @@ class VideoGrid(QListView):
         self.hover_item = None
         self.preview_widget = None
         self.preview_players = []
+        self.preview_positions = [0.1, 0.5, 0.9]  # 10%, 50%, 90% positions
     
     def mouseMoveEvent(self, event):
         super().mouseMoveEvent(event)
@@ -140,8 +143,6 @@ class VideoGrid(QListView):
                 
             if not self.preview_widget:
                 try:
-                    from utils.video_utils import extract_thumbnail
-                    
                     self.preview_widget = QWidget(None, Qt.ToolTip)
                     self.preview_widget.setWindowFlags(Qt.ToolTip | Qt.FramelessWindowHint)
                     self.preview_widget.setAttribute(Qt.WA_TranslucentBackground)
@@ -160,24 +161,28 @@ class VideoGrid(QListView):
                     self.preview_info.setWordWrap(True)
                     main_layout.addWidget(self.preview_info)
                     
+                    # Create layout for thumbnails/videos
                     thumbs_layout = QHBoxLayout()
-                    thumbs_layout.setSpacing(5)
+                    thumbs_layout.setSpacing(10)
                     
-                    self.preview_positions = [0.1, 0.5, 0.9]
                     self.preview_thumbnails = []
+                    self.preview_players = []
+                    self.preview_containers = []
                     
                     for pos in self.preview_positions:
-                        thumb_container = QWidget()
-                        thumb_container.setStyleSheet("background-color: black; border-radius: 4px;")
-                        container_layout = QVBoxLayout(thumb_container)
+                        container = QWidget()
+                        container.setStyleSheet("background-color: black; border-radius: 4px;")
+                        container_layout = QVBoxLayout(container)
                         container_layout.setContentsMargins(0, 0, 0, 0)
                         container_layout.setSpacing(0)
                         
+                        # Use thumbnail initially, we'll try to play video if possible
                         thumb_label = QLabel()
-                        thumb_label.setFixedSize(160, 90)
+                        thumb_label.setFixedSize(240, 135)
                         thumb_label.setAlignment(Qt.AlignCenter)
                         thumb_label.setStyleSheet("background-color: black;")
                         
+                        # Position label
                         pos_label = QLabel(f"{int(pos * 100)}%")
                         pos_label.setAlignment(Qt.AlignCenter)
                         pos_label.setStyleSheet("color: white; background-color: rgba(0, 0, 0, 150); padding: 2px;")
@@ -186,8 +191,8 @@ class VideoGrid(QListView):
                         container_layout.addWidget(pos_label)
                         
                         self.preview_thumbnails.append(thumb_label)
-                        
-                        thumbs_layout.addWidget(thumb_container)
+                        self.preview_containers.append(container)
+                        thumbs_layout.addWidget(container)
                     
                     main_layout.addLayout(thumbs_layout)
                     self.preview_widget.setLayout(main_layout)
@@ -196,6 +201,7 @@ class VideoGrid(QListView):
                     print(f"Error creating preview widget: {str(e)}")
                     return
             
+            # Set title and info
             self.preview_title.setText(file_name)
             
             info_text = f"Size: {format_file_size(item.size)} | Duration: {format_duration(item.duration)}"
@@ -204,23 +210,24 @@ class VideoGrid(QListView):
                 
             self.preview_info.setText(info_text)
             
-            from utils.video_utils import extract_thumbnail
-            
+            # Extract and set thumbnails
             for i, pos in enumerate(self.preview_positions):
                 try:
-                    thumbnail = extract_thumbnail(file_path, pos, QSize(160, 90))
+                    # Use thumbnail instead of video player due to issues with QMediaPlayer
+                    thumbnail = extract_thumbnail(file_path, pos, QSize(240, 135))
                     if thumbnail:
                         self.preview_thumbnails[i].setPixmap(thumbnail)
                     else:
-                        placeholder = QPixmap(160, 90)
+                        placeholder = QPixmap(240, 135)
                         placeholder.fill(Qt.darkGray)
                         self.preview_thumbnails[i].setPixmap(placeholder)
                 except Exception as e:
                     print(f"Error extracting thumbnail at position {pos}: {str(e)}")
-                    placeholder = QPixmap(160, 90)
+                    placeholder = QPixmap(240, 135)
                     placeholder.fill(Qt.darkGray)
                     self.preview_thumbnails[i].setPixmap(placeholder)
             
+            # Position and show preview
             cursor_pos = QCursor.pos()
             preview_x = cursor_pos.x() + 20
             preview_y = cursor_pos.y() + 20
@@ -240,6 +247,14 @@ class VideoGrid(QListView):
     
     def _close_preview(self):
         try:
+            # Stop and release all video players
+            for player in self.preview_players:
+                try:
+                    player.stop()
+                    player.setMedia(QMediaContent())
+                except Exception as e:
+                    print(f"Error stopping player: {str(e)}")
+                    
             if hasattr(self, 'preview_widget') and self.preview_widget:
                 try:
                     self.preview_widget.hide()

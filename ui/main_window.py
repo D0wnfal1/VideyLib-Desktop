@@ -971,8 +971,12 @@ class MainWindow(QMainWindow):
         rename_button = QPushButton("Rename")
         rename_button.clicked.connect(lambda: self._rename_tag_in_manager(tag_list))
         
+        delete_button = QPushButton("Delete")
+        delete_button.clicked.connect(lambda: self._delete_tag_in_manager(tag_list))
+        
         button_layout.addWidget(add_button)
         button_layout.addWidget(rename_button)
+        button_layout.addWidget(delete_button)
         
         layout.addLayout(button_layout)
         
@@ -1017,6 +1021,31 @@ class MainWindow(QMainWindow):
             
             # Update the list
             selected_items[0].setText(new_name)
+    
+    def _delete_tag_in_manager(self, tag_list):
+        """Delete selected tag in the tag manager"""
+        selected_items = tag_list.selectedItems()
+        if not selected_items:
+            QMessageBox.information(self, "No Selection", "Please select a tag to delete.")
+            return
+            
+        old_name = selected_items[0].text()
+        reply = QMessageBox.question(
+            self,
+            "Delete Tag",
+            f"Are you sure you want to delete the tag '{old_name}'?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            # Remove from database
+            tag_id = self.db.get_tag_id(old_name)
+            if tag_id:
+                self.db.remove_tag(tag_id)
+            
+            # Update the list
+            tag_list.takeItem(tag_list.row(selected_items[0]))
     
     def toggle_video_tag(self, video_id, tag, is_checked):
         """Toggle a tag on a video"""
